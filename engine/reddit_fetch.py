@@ -36,6 +36,34 @@ class FetchError(RuntimeError):
     pass
 
 
+class SourceAuthError(FetchError):
+    """源站认证/授权类失败（401/403）。与断网不同，这类错误不会自愈，
+    必须告警而不是静默——否则配置错误会被「无新料」永久掩盖。"""
+
+
+# 错误分类 → 是否值得告警：
+#   auth            告警（凭据错/被封，不自愈）
+#   other           告警（代码级异常，如解析崩溃）
+#   network/rate/server  静默（断网、限流、对方故障，次日自动重试即可）
+_AUTH_CODES = {401, 403}
+_SILENT_CODES = {429, 500, 502, 503}
+
+
+def classify_error(e):
+    """把抓取异常归类为 auth / rate / server / network / http-N / other。"""
+    if isinstance(e, urllib.error.HTTPError):
+        if e.code in _AUTH_CODES:
+            return "auth"
+        if e.code == 429:
+            return "rate"
+        if e.code in _SILENT_CODES:
+            return "server"
+        return "http-{}".format(e.code)
+    if isinstance(e, (urllib.error.URLError, OSError)):
+        return "network"
+    return "other"
+
+
 def _http(url, headers=None, data=None, method="GET", timeout=25):
     req = urllib.request.Request(url, headers=headers or {},
                                  data=data, method=method)
@@ -195,7 +223,8 @@ def fetch_clusters(clusters, min_score=10, min_comments=3,
 
     - oauth 通道：sub 间隔默认 3s（限额充裕）
     - rss   通道：sub 间隔默认 75s（实测冷却约 75s 恢复，连续请求立即 429）
-    - 单 sub 失败静默跳过；全部失败返回空列表（上层走断网静默分支）
+    - 单 sub 失败静默跳过；全部失败时——若失败均为 network/rate/server 类则返回
+      空列表（上层走断网静默分支），含 auth/other 类则抛 SourceAuthError 触发告警
     """
     transport = resolve_transport()
     if per_sub_sleep is None:
@@ -203,6 +232,7 @@ def fetch_clusters(clusters, min_score=10, min_comments=3,
     fetch_one = fetch_sub_oauth if transport == "oauth" else fetch_sub_rss
 
     merged = {}
+    failures = []
     for cluster in clusters:
         if not cluster.get("enabled", True):
             continue
@@ -213,9 +243,19 @@ def fetch_clusters(clusters, min_score=10, min_comments=3,
                 posts = filter_posts(
                     fetch_one(sub, timeframe=timeframe, limit=limit),
                     min_score=min_score, min_comments=min_comments)
-            except Exception:
+            except Exception as e:  # 单 sub 失败先记账，最后统一裁决
+                failures.append((sub, e))
                 continue
             for p in posts:
                 merged.setdefault(p["permalink"],
                                   dict(p, cluster=cluster["name"]))
+
+    if not merged and failures:
+        verdict = [(sub, classify_error(e)) for sub, e in failures]
+        fatal = [(s, k) for s, k in verdict if k in ("auth", "other")]
+        if fatal:
+            raise SourceAuthError(
+                "全部 {} 个 sub 抓取失败且含致命错误: {}".format(
+                    len(verdict),
+                    ", ".join("{}({})".format(s, k) for s, k in fatal)))
     return list(merged.values())

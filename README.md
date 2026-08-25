@@ -14,15 +14,20 @@
 # 1. 配置（必填 DEEPSEEK_API_KEY；建议填 REDDIT_CLIENT_ID/SECRET 与代理）
 cp .env.example .env
 
-# 2. 离线自检：不联网不需要 key，走通 校验/去重/归档 全链路
+# 2. 体检：key 连通性 / 代理可达性 / Reddit 通道，一条命令出报告
+python3 idea_engine.py --check
+
+# 3. 离线自检：不联网不需要 key，走通 校验/去重/归档 全链路
 python3 idea_engine.py --selftest
 
-# 3. 试抓取：真实抓 Reddit 并打印将发给 LLM 的 prompt，不调 API 不写盘
+# 4. 试抓取：真实抓 Reddit 并打印将发给 LLM 的 prompt，不调 API 不写盘
 python3 idea_engine.py --dry-run
 
-# 4. 正式跑
+# 5. 正式跑
 python3 idea_engine.py
 ```
+
+**失败分类**（决定告警还是静默）：抓取错误分为 `auth`（凭据错/被封）、`other`（代码异常）→ 触发告警；`network/rate/server`（断网、限流、对方故障）→ 静默次日重试。全部 sub 失败且含致命类时抛 `SourceAuthError` 走告警路径，配置错误不会被「无新料」掩盖。
 
 ## 架构
 
