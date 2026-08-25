@@ -29,6 +29,12 @@ python3 idea_engine.py
 
 **失败分类**（决定告警还是静默）：抓取错误分为 `auth`（凭据错/被封）、`other`（代码异常）→ 触发告警；`network/rate/server`（断网、限流、对方故障）→ 静默次日重试。全部 sub 失败且含致命类时抛 `SourceAuthError` 走告警路径，配置错误不会被「无新料」掩盖。
 
+## 测试
+
+```bash
+python3 tests/test_engine.py   # 零依赖回归套件：解析容错/校验去重/归档格式/过滤/错误分类
+```
+
 ## 架构
 
 ```
