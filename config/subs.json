@@ -1,0 +1,22 @@
+{
+  "clusters": [
+    {
+      "name": "request",
+      "enabled": true,
+      "subs": ["SomebodyMakeThis", "AppIdeas"],
+      "_comment": "求造需求簇：用户直接喊话要产品"
+    },
+    {
+      "name": "ideas",
+      "enabled": true,
+      "subs": ["Lightbulb", "CrazyIdeas"],
+      "_comment": "脑洞创意簇"
+    },
+    {
+      "name": "pain",
+      "enabled": true,
+      "subs": ["DoesAnybodyElse"],
+      "_comment": "共鸣痛点簇：DAE 式未被满足的日常痛点"
+    }
+  ]
+}

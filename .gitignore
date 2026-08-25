@@ -4,3 +4,10 @@
 # 编辑器
 .vscode/
 .idea/
+
+# 本机灵感引擎：密钥与运行时产物
+.env
+logs/
+data/
+data-selftest/
+__pycache__/

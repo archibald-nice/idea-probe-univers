@@ -1,0 +1,10 @@
+{
+  "max_daily": 5,
+  "filter": {
+    "timeframe": "day",
+    "limit": 40,
+    "min_score": 10,
+    "min_comments": 3
+  },
+  "_comment": "transport 见 .env 的 REDDIT_TRANSPORT（auto=有凭据走官方 oauth，否则 rss 兜底）；listing 字段已废弃，oauth/rss 均固定 top"
+}
