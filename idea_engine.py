@@ -8,11 +8,17 @@
   python3 idea_engine.py --selftest   # 离线样例走通 校验/去重/归档 全链路（无需 key，写入 data-selftest/）
   python3 idea_engine.py --check      # 配置体检：key 连通性 / 代理可达性 / Reddit 通道
 
+开发回放钩子（不联网、不调 LLM，强制写入 data-e2e/ 隔离目录）:
+  python3 idea_engine.py --posts harvest.json --llm-response canned.txt
+  # --posts          用已抓取的帖子 JSON 回放，跳过实时抓取
+  # --llm-response   用指定文件内容充当 LLM 输出（配合可离线验证全链路）
+
 静默约定:
   - 无新料（含全网源不可达/断网）→ 静默退出 0        （验收：断网 24h 零告警）
   - 本轮无合格灵感（宁缺毋滥）    → 静默退出 0
   - 有料但处理失败                → ALERT 日志 + 退出码 1
 """
+import json
 import os
 import sys
 
@@ -78,6 +84,15 @@ def doctor():
     return 0 if ok else 1
 
 
+def _arg_value(argv, flag):
+    """读取布尔旗标后面紧跟的参数值；不存在返回 None。"""
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return None
+
+
 def run(argv):
     config.load_env()
     log = alert.get_logger()
@@ -87,6 +102,11 @@ def run(argv):
     if "--check" in argv:
         return doctor()
 
+    mock_llm_path = _arg_value(argv, "--llm-response")
+    mock_posts_path = _arg_value(argv, "--posts")
+    if mock_llm_path or mock_posts_path:
+        os.environ["ARCHIVE_DIR"] = "data-e2e"  # 回放隔离，不碰真实归档
+
     # 0. 离线自测：不联网、不需要 key，写入 data-selftest/ 隔离目录
     if "--selftest" in argv:
         from engine import selftest_data
@@ -95,11 +115,16 @@ def run(argv):
         raw = selftest_data.SELFTEST_RESPONSE
         log.info("selftest: %d fake posts, canned LLM response", len(posts))
     else:
-        # 1. 抓取 + 过滤
-        subs_cfg = config.load_json_config("subs.json")
-        posts = reddit_fetch.fetch_clusters(subs_cfg["clusters"],
-                                            **engine_cfg.get("filter", {}))
-        log.info("harvest: %d posts after filter", len(posts))
+        # 1. 抓取 + 过滤（--posts 可回放已抓取数据，跳过实时抓取）
+        if mock_posts_path:
+            with open(mock_posts_path, encoding="utf-8") as f:
+                posts = json.load(f)
+            log.info("replay: %d posts from %s", len(posts), mock_posts_path)
+        else:
+            subs_cfg = config.load_json_config("subs.json")
+            posts = reddit_fetch.fetch_clusters(subs_cfg["clusters"],
+                                                **engine_cfg.get("filter", {}))
+            log.info("harvest: %d posts after filter", len(posts))
         if not posts:
             print("无新料，静默退出")
             return 0
@@ -108,12 +133,20 @@ def run(argv):
         user_prompt = distill.build_user_prompt(posts)
         if "--dry-run" in argv:
             print(user_prompt)
+            print("\n[prompt size] {} chars".format(len(user_prompt)),
+                  file=sys.stderr)
             return 0
 
-        # 3. LLM 提炼
-        provider = get_provider()
-        log.info("distilling via %s (%s)...", provider.name, provider.model)
-        raw = provider.chat(distill.SYSTEM_PROMPT, user_prompt)
+        # 3. LLM 提炼（或回放 canned 响应）
+        if mock_llm_path:
+            with open(mock_llm_path, encoding="utf-8") as f:
+                raw = f.read()
+            log.info("replay: canned LLM response from %s", mock_llm_path)
+        else:
+            provider = get_provider()
+            log.info("distilling via %s (%s)...", provider.name,
+                     provider.model)
+            raw = provider.chat(distill.SYSTEM_PROMPT, user_prompt)
 
     items = distill.parse_response(raw)
 
