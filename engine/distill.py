@@ -5,6 +5,7 @@ prompt 核心（PRD §4）：只留未被满足的需求，宁缺毋滥，必须
 """
 import datetime
 import json
+import re
 from difflib import SequenceMatcher
 
 SYSTEM_PROMPT = """你是灵感提炼引擎。输入是若干 Reddit 帖子（JSON 数组）。你的任务：
@@ -118,8 +119,8 @@ def validate(items, source_posts, existing, max_items=5,
             continue
         if len(title) > max_title_len or len(claim) > max_claim_len:
             continue
-        # —— 去重 ——
-        if fid in existing["ids"]:
+        # —— 去重（id 按剥离序号前缀后的裸 id 比对，跨天前缀不变性）——
+        if re.sub(r"^\d+-", "", fid) in existing["ids"]:
             continue
         norm_ev = [u.split("?")[0] for u in ev]
         if any(e in existing["evidences"] for e in norm_ev):

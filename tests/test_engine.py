@@ -106,16 +106,33 @@ got = distill.validate(many, posts, existing, max_items=3)
 check("max_items 截断且保序",
       [p["id"] for p in got] == ["m4", "m3", "m2"])
 
+# 跨天前缀不变性：存量索引存裸 id，候选带新序号前缀仍应判重
+ex2 = {"ids": {"notes-apps"}, "evidences": set(), "titles": []}
+cand = [{"id": "95-notes-apps", "title": "完全不同的标题", "claim": "断言",
+         "evidence": [U1], "confidence": 9}]
+check("带前缀候选命中裸 id 去重",
+      distill.validate(cand, posts, ex2) == [])
+
 # -------------------------------------------------------------------- record
 print("[archive]")
 rec = archive.record("fid-1", "标题", "断言",
-                     ["https://e"], "方法", first_seen_at="T0")
-check("PRD §5 字段结构",
+                     ["https://e"], "方法",
+                     confidence=0.9, first_seen_at="T0")
+check("存量对齐字段结构（核心五 + confidence 可选）",
       set(rec.keys()) == {"first_seen_at", "finding"} and
       set(rec["finding"].keys()) ==
-      {"id", "title", "claim", "evidence", "method"})
-check("first_seen_at 可注入",
-      rec["first_seen_at"] == "T0")
+      {"id", "title", "claim", "evidence", "method", "confidence"})
+check("first_seen_at 可注入", rec["first_seen_at"] == "T0")
+rec_nc = archive.record("f2", "t", "c", ["u"], "m")
+check("confidence 缺省时不写字段",
+      "confidence" not in rec_nc["finding"])
+check("next_seq 延续存量最大序号",
+      archive.next_seq({"321-guitar-x", "12-y", "no-prefix"}) == 322)
+check("next_seq 无序号记录 → 94 起步",
+      archive.next_seq({"plain-id"}) == 94)
+check("next_seq 空归档 → 94 起步", archive.next_seq(set()) == 94)
+check("next_seq 忽略时间戳级大前缀",
+      archive.next_seq({"602-a", "1786966801-b"}) == 603)
 
 tmpdir = tempfile.mkdtemp(prefix="idea-test-")
 os.environ["ARCHIVE_DIR"] = tmpdir  # pathlib 绝对路径拼接会整体替换
@@ -128,12 +145,20 @@ day_dir = os.listdir(os.path.join(tmpdir, "findings"))[0]
 check("findings/YYYY-MM-DD/<id>.json 落盘",
       os.path.exists(os.path.join(tmpdir, "findings", day_dir, "fid-1.json")))
 ex = archive.load_existing()
-check("load_existing 回读索引",
-      ex["ids"] == {"fid-1"} and ex["titles"] == ["标题"])
+check("load_existing 回读索引（含 raw_ids）",
+      ex["ids"] == {"fid-1"} and ex["raw_ids"] == {"fid-1"}
+      and ex["titles"] == ["标题"])
+# 序号前缀不变性：写入 '94-foo' 后，裸 id 应入归一化索引
+archive.append([archive.record("94-foo", "另一个标题", "断言", ["https://u2"],
+                               "m", confidence=0.8)])
+ex = archive.load_existing()
+check("前缀 id 归一化入索引", "foo" in ex["ids"] and "94-foo" in ex["raw_ids"])
+check("next_seq 从 95 继续", archive.next_seq(ex["raw_ids"]) == 95)
 with open(os.path.join(tmpdir, "archive.jsonl"), "a",
           encoding="utf-8") as f:
     f.write("这不是合法行\n")
-check("坏行跳过不抛异常", archive.load_existing()["ids"] == {"fid-1"})
+check("坏行跳过不抛异常",
+      archive.load_existing()["ids"] == {"fid-1", "foo"})
 
 # -------------------------------------------------------------- filter_posts
 print("[reddit_fetch.filter_posts]")

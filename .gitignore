@@ -5,9 +5,11 @@
 .vscode/
 .idea/
 
-# 本机灵感引擎：密钥与运行时产物
+# 本机灵感引擎：密钥与运行时产物（archive.jsonl 例外——灵感库本体要进版本控制）
 .env
 logs/
-data/
+data/*
+!data/archive.jsonl
 data-selftest/
+data-e2e/
 __pycache__/

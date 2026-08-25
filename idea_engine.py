@@ -20,6 +20,7 @@
 """
 import json
 import os
+import re
 import sys
 
 from engine import alert, archive, config, distill, reddit_fetch
@@ -94,6 +95,8 @@ def _arg_value(argv, flag):
 
 
 def run(argv):
+    # 进程环境显式指定的 ARCHIVE_DIR 优先于回放隔离逻辑
+    explicit_archive_dir = os.environ.get("ARCHIVE_DIR")
     config.load_env()
     log = alert.get_logger()
     engine_cfg = config.load_json_config("engine.json")
@@ -104,7 +107,7 @@ def run(argv):
 
     mock_llm_path = _arg_value(argv, "--llm-response")
     mock_posts_path = _arg_value(argv, "--posts")
-    if mock_llm_path or mock_posts_path:
+    if (mock_llm_path or mock_posts_path) and not explicit_archive_dir:
         os.environ["ARCHIVE_DIR"] = "data-e2e"  # 回放隔离，不碰真实归档
 
     # 0. 离线自测：不联网、不需要 key，写入 data-selftest/ 隔离目录
@@ -158,15 +161,19 @@ def run(argv):
         print("本轮无合格灵感（宁缺毋滥），静默退出")
         return 0
 
-    # 5. 归档（格式与 archive.jsonl 完全兼容）
-    records = [
-        archive.record(
-            finding_id=p["id"], title=p["title"], claim=p["claim"],
+    # 5. 归档（对齐存量实物格式：延续数字序号前缀 + confidence 0~1 浮点）
+    seq = archive.next_seq(existing["raw_ids"])
+    records = []
+    for p in picked:
+        fid = p["id"] if re.match(r"^\d+-", p["id"]) \
+            else "{}-{}".format(seq, p["id"])
+        seq += 1
+        records.append(archive.record(
+            finding_id=fid, title=p["title"], claim=p["claim"],
             evidence=p["evidence"],
             method="本机引擎：{}簇扫描 + DeepSeek提炼".format(p["_cluster"]),
-        )
-        for p in picked
-    ]
+            confidence=round(p["confidence"] / 10.0, 2),
+        ))
     ids = archive.append(records)
     for p in picked:
         log.info("finding: [%s] %s", p["id"], p["title"])
