@@ -53,13 +53,17 @@ engine/archive.py         ★唯一接触磁盘格式的模块★
         └─ {ARCHIVE_DIR}/findings/YYYY-MM-DD/*.json
 ```
 
-**格式契约**（PRD §5，全项目仅 `engine/archive.py` 一处实现）：
+**格式契约**（与存量实物逐字段比对后对齐，2026-08-25）：
 
 ```json
-{"first_seen_at": "...", "finding": {"id", "title", "claim", "evidence": [...], "method"}}
+{"first_seen_at": "…微秒", "finding": {"id": "603-slug", "title": "…",
+ "claim": "…", "evidence": ["reddit链接"], "method": "…", "confidence": 0.8}}
 ```
 
-存量 `archive.jsonl` 到位后：把它所在目录设为 `.env` 的 `ARCHIVE_DIR`，再按实物对齐该模块字段即可无缝并入。
+- **93 条存量已迁入 `data/archive.jsonl` 作为唯一真源**（git 追踪；`data/` 下其余产物仍忽略）
+- 新记录延续存量小序号前缀（603 起，忽略存量大数值时间戳 id）；id 去重按剥离前缀后的裸 id 比对，跨天不失效
+- `confidence` 跟随实物口径：0~1 浮点（LLM 的 7~10 自评 ÷10）
+- 存量的深度分析富化字段（gap/verdict/tags 等）为原版管线产物，本引擎不伪造
 
 ## 调度（每日 21:00）
 
