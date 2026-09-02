@@ -65,14 +65,22 @@ engine/archive.py         ★唯一接触磁盘格式的模块★
 - `confidence` 跟随实物口径：0~1 浮点（LLM 的 7~10 自评 ÷10）
 - 存量的深度分析富化字段（gap/verdict/tags 等）为原版管线产物，本引擎不伪造
 
-## 调度（每日 21:00）
+## 部署与调度（Docker · 云服务器）
 
-`scripts/com.archie.idea-engine.plist` 为 launchd 配置（macOS 无 crontab）：
+> 2026-08-26 用户拍板：否决 macOS launchd，改为容器化部署云服务器。本机仅手动调试用。
 
 ```bash
-cp scripts/com.archie.idea-engine.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.archie.idea-engine.plist
+# 服务器上（海外节点直连 Reddit，代理留空即可）
+git clone <repo> && cd idea-probe-univers
+cp .env.example .env        # 填 DEEPSEEK_API_KEY；REDDIT 凭据/代理可选
+docker compose up -d        # 构建并常驻：容器内每日 21:00(UTC+8) 自动运行引擎
+docker compose logs -f      # 观察调度心跳与运行日志
+docker compose run --rm idea-engine python3 idea_engine.py --check   # 一次性体检
 ```
+
+- 时区/时刻：`RUN_AT_HOUR`（默认 21）、`RUN_AT_UTC_OFFSET`（默认 8）
+- 数据持久化：`data/`（含 archive.jsonl）与 `logs/` 挂载宿主机，重建容器不丢灵感库
+- 调度逻辑见 [deploy/docker-entrypoint.sh](deploy/docker-entrypoint.sh)：常驻循环，到点运行一次，失败不退出（告警/日志由引擎侧负责）
 
 ## 静默约定（PRD 目标 4）
 

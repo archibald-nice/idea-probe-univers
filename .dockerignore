@@ -1,0 +1,12 @@
+.env
+.git
+logs/
+data/
+data-selftest/
+data-e2e/
+docs/
+tests/
+scripts/
+__pycache__/
+*.md
+.DS_Store
