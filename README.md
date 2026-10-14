@@ -2,11 +2,14 @@
 
 本机灵感引擎（Idea Engine）——Reddit 热帖 → LLM 提炼「claim + evidence」→ 归档兼容 `archive.jsonl`。
 
-> **当前状态**：MVP 代码就位（2026-08-25 开工）。离线自测通过；待办：填 key、接入存量归档格式比对、安装调度。
+> **当前状态**：MVP 已跑通生产（2026-09-02 首次真实运行，归档 5 条）。调度走 Docker 常驻容器，部署在私有服务器；本仓库只含代码。
 
-## 文档
+## 私有资产（不进公开仓库）
 
-- [docs/本机灵感引擎_PRD_v0.1.md](docs/本机灵感引擎_PRD_v0.1.md) — PRD v0.2 定稿 + §10 现实校准附录
+- `docs/` — PRD 与设计文档
+- `data/` — 灵感库本体（`archive.jsonl`）与每日 `findings/` 产物
+
+两者已在 `.gitignore` 中，仅保留在本地与私有部署机。新机器部署时 `git clone` **不包含**这些内容，需另行从私有渠道同步（见下文「数据维护」）。
 
 ## 快速开始
 
@@ -60,19 +63,25 @@ engine/archive.py         ★唯一接触磁盘格式的模块★
  "claim": "…", "evidence": ["reddit链接"], "method": "…", "confidence": 0.8}}
 ```
 
-- **93 条存量已迁入 `data/archive.jsonl` 作为唯一真源**（git 追踪；`data/` 下其余产物仍忽略）
+- **93 条存量已迁入 `data/archive.jsonl` 作为唯一真源**（私有资产，不进公开仓库）
 - 新记录延续存量小序号前缀（603 起，忽略存量大数值时间戳 id）；id 去重按剥离前缀后的裸 id 比对，跨天不失效
 - `confidence` 跟随实物口径：0~1 浮点（LLM 的 7~10 自评 ÷10）
 - 存量的深度分析富化字段（gap/verdict/tags 等）为原版管线产物，本引擎不伪造
 
-## 部署与调度（Docker · 云服务器）
+## 部署与调度（Docker · 私有服务器）
 
-> 2026-08-26 用户拍板：否决 macOS launchd，改为容器化部署云服务器。本机仅手动调试用。
+> 2026-08-26 拍板：否决 macOS launchd，改为容器化部署私有服务器。本机仅手动调试用。
+> **本仓库没有 Web 前端，也没有常驻 API** —— 引擎是一个每日跑一次的批处理作业，因此不需要 Vercel；它唯一的运行载体就是下面这台服务器上的容器。
 
 ```bash
 # 服务器上（海外节点直连 Reddit，代理留空即可）
 git clone <repo> && cd idea-probe-univers
 cp .env.example .env        # 填 DEEPSEEK_API_KEY；REDDIT 凭据/代理可选
+
+# 关键：data/ 不在仓库里，需从本地私有副本同步一次（首次或换机时）
+#   本地执行：rsync -av data/ user@server:/path/idea-probe-univers/data/
+#   服务器上：mkdir -p data logs
+
 docker compose up -d        # 构建并常驻：容器内每日 21:00(UTC+8) 自动运行引擎
 docker compose logs -f      # 观察调度心跳与运行日志
 docker compose run --rm idea-engine python3 idea_engine.py --check   # 一次性体检
@@ -80,7 +89,24 @@ docker compose run --rm idea-engine python3 idea_engine.py --check   # 一次性
 
 - 时区/时刻：`RUN_AT_HOUR`（默认 21）、`RUN_AT_UTC_OFFSET`（默认 8）
 - 数据持久化：`data/`（含 archive.jsonl）与 `logs/` 挂载宿主机，重建容器不丢灵感库
+- `data/` 目录由引擎自动创建（`mkdir(parents=True)`），无需手工建
 - 调度逻辑见 [deploy/docker-entrypoint.sh](deploy/docker-entrypoint.sh)：常驻循环，到点运行一次，失败不退出（告警/日志由引擎侧负责）
+
+### 数据维护建议
+
+灵感库是**唯一不可再生资产**（LLM 每次产出不同），代码可重建、数据不可重建，因此：
+
+1. **备份优先**：`data/archive.jsonl` 定期同步回本地或私有备份仓（**不要**推公开仓库）
+   ```bash
+   # 本地拉回（建议每周）
+   rsync -av user@server:/path/idea-probe-univers/data/ ./data-backup/
+   ```
+2. **手动补跑**：错过窗口或想立即跑一轮
+   ```bash
+   docker compose run --rm idea-engine python3 idea_engine.py
+   ```
+3. **观察健康**：`logs/run.log` 出现 `ALERT` 或容器退出码非 0 时才需要人工介入；「无新料」是正常静默，不必处理
+4. **换机迁移**：`rsync data/ + logs/` 到新机器即可，容器本身无状态
 
 ## 静默约定（PRD 目标 4）
 
